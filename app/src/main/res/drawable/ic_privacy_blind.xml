@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="18dp"
+    android:height="18dp"
+    android:viewportWidth="18"
+    android:viewportHeight="18">
+    <!-- Eye Contour -->
+    <path
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.4"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M2.5,9 C4.5,5.5 6.8,4.5 9,4.5 C11.2,4.5 13.5,5.5 15.5,9 C13.5,12.5 11.2,13.5 9,13.5 C6.8,13.5 4.5,12.5 2.5,9 Z" />
+
+    <!-- Center Iris -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M9,7 A2,2 0 1,1 8.99,7 Z" />
+
+    <!-- Privacy Blind Slash -->
+    <path
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.6"
+        android:strokeLineCap="round"
+        android:pathData="M3,3 L15,15" />
+</vector>

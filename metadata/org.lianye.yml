@@ -1,0 +1,24 @@
+Categories:
+  - Multimedia
+  - System
+License: MIT
+AuthorName: Lianye Contributors
+SourceCode: https://github.com/gxwane/lianye
+IssueTracker: https://github.com/gxwane/lianye/issues
+
+AutoUpdateMode: None
+UpdateCheckMode: Tags
+
+Summary: Capture long screenshots on your device
+Description: |-
+  Lianye (连页) is an open-source long screenshot tool for Android 10 and later.
+  Choose automatic scrolling or scroll the page yourself using on-screen guidance.
+  Both modes use floating controls to start and finish your capture.
+  Manual capture does not require accessibility permission.
+
+  Review, crop, save, or share the resulting image. Images are processed on your
+  device. The app has no network permission, accounts, ads, or tracking.
+  Capture availability and stitching quality depend on the page and device.
+
+RepoType: git
+Repo: https://github.com/gxwane/lianye.git

@@ -1,0 +1,137 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Existing version tag to build and publish'
+        required: true
+        type: string
+      publish:
+        description: 'Publish the release and deploy F-Droid after verification'
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+env:
+  RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+
+jobs:
+  build-and-release:
+    name: Build and verify signed APK
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Checkout release verification tools
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .release-tools
+          sparse-checkout: tool
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v6.0.1
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Decode Keystore
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > lianye-release.jks
+
+      - name: Build signed Release APK
+        env:
+          storeFile: ${{ github.workspace }}/lianye-release.jks
+          storePassword: ${{ secrets.KEYSTORE_STORE_PASSWORD }}
+          keyAlias: ${{ secrets.KEYSTORE_KEY_ALIAS }}
+          keyPassword: ${{ secrets.KEYSTORE_KEY_PASSWORD }}
+        run: ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleRelease verifyZeroNetworkDependencies
+
+      - name: Verify release identity, signature and lint
+        run: |
+          python3 tool/sync_brand_assets.py --check
+          python3 - << 'PY'
+          import os
+          import sys
+          from pathlib import Path
+          import subprocess
+          sys.path.insert(0, '.release-tools')
+          from tool.verify_release import sdk_tool
+          sdk = Path(os.environ.get('ANDROID_HOME') or os.environ['ANDROID_SDK_ROOT'])
+          subprocess.run([str(sdk_tool(sdk, 'apksigner')), 'verify', '--verbose', '--print-certs',
+                          'app/build/outputs/apk/release/app-release.apk'], check=True)
+          PY
+          python3 -m unittest discover -s .release-tools/tool -p test_verify_release.py
+          python3 .release-tools/tool/verify_release.py \
+            --apk app/build/outputs/apk/release/app-release.apk \
+            --tag "$RELEASE_TAG" \
+            --source-root . \
+            --lint-report app/build/reports/lint-results-debug.xml \
+            --output build/release-verification.json
+
+      - name: Rename APK with version tag
+        run: |
+          VERSION="$RELEASE_TAG"
+          cp app/build/outputs/apk/release/app-release.apk \
+             "Lianye-${VERSION}.apk"
+          sha256sum "Lianye-${VERSION}.apk" > SHA256SUMS.txt
+
+      - name: Upload verification reports
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: release-verification
+          path: |
+            build/release-verification.json
+            app/build/reports/tests/testDebugUnitTest
+            app/build/reports/lint-results-debug.*
+
+      - name: Determine pre-release flag
+        id: prerelease
+        run: |
+          if [[ "$RELEASE_TAG" == *"beta"* ]] || \
+             [[ "$RELEASE_TAG" == *"alpha"* ]] || \
+             [[ "$RELEASE_TAG" == *"rc"* ]]; then
+            echo "is_prerelease=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_prerelease=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create GitHub Release
+        if: github.event_name != 'workflow_dispatch' || inputs.publish
+        uses: softprops/action-gh-release@v3.0.3
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: 连页 ${{ env.RELEASE_TAG }}
+          prerelease: ${{ steps.prerelease.outputs.is_prerelease }}
+          body_path: CHANGELOG.md
+          fail_on_unmatched_files: true
+          files: |
+            Lianye-${{ env.RELEASE_TAG }}.apk
+            SHA256SUMS.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  deploy-fdroid-repo:
+    name: Deploy F-Droid Repository
+    needs: build-and-release
+    if: github.event_name != 'workflow_dispatch' || inputs.publish
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/fdroid-repo.yml
+    with:
+      release_tag: ${{ inputs.release_tag || github.ref_name }}
+    secrets: inherit

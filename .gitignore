@@ -1,0 +1,29 @@
+*.iml
+.gradle/
+build/
+local.properties
+.idea/
+.DS_Store
+captures/
+.externalNativeBuild
+.cxx
+*.apk
+*.aab
+.kotlin/
+__pycache__/
+*.py[cod]
+.render-profile/
+
+# Local research notes; maintained product and implementation docs are versioned.
+docs/*.md
+!docs/ARCHITECTURE.md
+!docs/BRAND_AND_STRATEGY.md
+!docs/ROADMAP.md
+
+# Earlier local HTML explorations; current design is in native resources and specs.
+design/mockups/*.html
+
+# Signing credentials - NEVER commit these
+*.jks
+*.keystore
+keystore.properties

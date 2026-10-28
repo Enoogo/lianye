@@ -1,0 +1,120 @@
+name: Deploy F-Droid Repo
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      release_tag:
+        required: true
+        type: string
+    secrets:
+      FDROID_KEYSTORE_BASE64:
+        required: true
+      FDROID_KEYSTORE_PASS:
+        required: true
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build-fdroid-repo:
+    name: Build & Deploy F-Droid Repository
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v7.0.1
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v6.0.1
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Install fdroidserver
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-venv librsvg2-bin
+          python3 -m venv "$RUNNER_TEMP/fdroid-env"
+          "$RUNNER_TEMP/fdroid-env/bin/pip" install fdroidserver==2.4.5 androguard==4.1.4
+          echo "$RUNNER_TEMP/fdroid-env/bin" >> "$GITHUB_PATH"
+
+      - name: Download latest release APK
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ inputs.release_tag || github.event.release.tag_name }}
+        run: |
+          mkdir -p fdroid/repo
+          release_args=()
+          if [[ -n "$RELEASE_TAG" ]]; then
+            release_args+=("$RELEASE_TAG")
+          fi
+          gh release download "${release_args[@]}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "Lianye-*.apk" \
+            --dir fdroid/repo
+
+      - name: Decode F-Droid repo signing keystore
+        run: |
+          echo "${{ secrets.FDROID_KEYSTORE_BASE64 }}" | base64 -d > fdroid/keystore.jks
+
+      - name: Initialize fdroid config
+        env:
+          PAGES_REPO_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/fdroid/repo
+        run: |
+          cat > fdroid/config.yml << EOF
+          repo_url: "${PAGES_REPO_URL}"
+          repo_name: "Lianye"
+          repo_icon: icon.png
+          repo_description: "Official Lianye F-Droid repository. Zero network, MIT licensed."
+          archive_older: 3
+          keystore: keystore.jks
+          repo_keyalias: fdroid
+          keystorepass: {env: FDROID_KEYSTORE_PASS}
+          keypass: {env: FDROID_KEYSTORE_PASS}
+          EOF
+          chmod 600 fdroid/config.yml
+
+      - name: Build F-Droid index
+        working-directory: fdroid
+        env:
+          FDROID_KEYSTORE_PASS: ${{ secrets.FDROID_KEYSTORE_PASS }}
+        run: |
+          mkdir -p metadata
+          cp ../metadata/org.lianye.yml metadata/
+          mkdir -p repo/icons
+          rsvg-convert --width=512 --height=512 ../design/brand/logo_master.svg > icon.png
+          cp icon.png repo/icons/icon.png
+          for locale in en-US zh-CN; do
+            mkdir -p "metadata/org.lianye/$locale/images"
+            cp icon.png "metadata/org.lianye/$locale/images/icon.png"
+          done
+          fdroid update --create-metadata --rename-apks
+
+      - name: Prepare Pages artifact
+        run: |
+          mkdir -p pages/fdroid pages/assets/showcase
+          cp -r fdroid/repo pages/fdroid/
+          cp -r website/. pages/
+          cp docs/assets/showcase/*.png docs/assets/showcase/*.gif docs/assets/showcase/*.mp4 pages/assets/showcase/
+          touch pages/.nojekyll
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v5.0.0
+        with:
+          path: pages
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5.0.1
